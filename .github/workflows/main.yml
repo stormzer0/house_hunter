@@ -20,5 +20,12 @@ jobs:
       - name: Install dependencies
         run: pip install firebase-admin requests
 
+      - name: Create Firebase Key File
+        run: echo "$FIREBASE_KEY" > firebase-key.json
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+
       - name: Run RentCast script
+        env:
+          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
         run: python rentcast_to_firebase.py

@@ -1,4 +1,4 @@
-// Import Firebase
+// Import Firebase modules from CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
 import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Function to fetch properties from Firestore
+// Function to fetch property data from Firestore
 async function fetchProperties() {
     const querySnapshot = await getDocs(collection(db, "properties"));
     let content = "<h2>Property Listings</h2>";
@@ -36,5 +36,5 @@ async function fetchProperties() {
     document.getElementById("property-data").innerHTML = content;
 }
 
-// Run function when the page loads
+// Fetch properties when the page loads
 document.addEventListener("DOMContentLoaded", fetchProperties);

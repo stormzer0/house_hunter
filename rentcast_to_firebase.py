@@ -45,14 +45,32 @@ def fetch_property_data():
 
 # Function to update Firebase
 def update_firebase(properties):
+    if not properties:
+        print("❌ No properties found. Nothing to update.")
+        return
+
+    print(f"📝 Found {len(properties)} properties. Updating Firebase...")
+
+    # (Optional) Clear old properties before updating
+    docs = db.collection("properties").stream()
+    for doc in docs:
+        doc.reference.delete()
+    print("🗑️ Cleared old properties.")
+
+    # Add all new properties
     for property in properties:
         address = property.get("address", "Unknown Address")
         if address == "Unknown Address":
+            print("⚠️ Skipping property with missing address")
             continue
 
+        print(f"📝 Writing to Firebase: {property}")  # Debugging log
         doc_ref = db.collection("properties").document(address.replace(" ", "_"))
         doc_ref.set(property)
-        print(f"Updated Firebase with {address}")
+        print(f"✅ Added: {address}")
+
+    print("🔥 Firebase update complete!")
+
 
 # Fetch data and update Firebase
 properties = fetch_property_data()

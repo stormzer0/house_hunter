@@ -13,12 +13,12 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v3
         with:
           python-version: "3.9"
 
       - name: Install dependencies
-        run: pip install firebase-admin requests
+        run: pip install -r requirements.txt
 
       - name: Create Firebase Key File
         run: echo "$FIREBASE_KEY" > firebase-key.json
@@ -26,6 +26,4 @@ jobs:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
 
       - name: Run RentCast script
-        env:
-          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
         run: python rentcast_to_firebase.py

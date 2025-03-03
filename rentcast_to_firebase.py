@@ -57,6 +57,39 @@ def update_firebase(properties):
         doc.reference.delete()
     print("🗑️ Cleared old properties.")
 
+    for property in properties:
+        address = property.get("formattedAddress", "Unknown Address")
+        if address == "Unknown Address":
+            print(f"⚠️ Skipping property due to missing address: {json.dumps(property, indent=2)}")
+            continue
+
+        document_id = address.replace(" ", "_").replace(",", "").replace(".", "")
+        rent_estimate = property.get("rentEstimate", 0)
+        last_sold_price = property.get("lastSalePrice", 0)  # Correct field from API
+        lot_size = property.get("lotSize", 0)  # Correct field for land size
+
+        doc_ref = db.collection("properties").document(document_id)
+        
+        try:
+            doc_ref.set({
+                "address": address,
+                "rent_estimate": rent_estimate,
+                "last_sold_price": last_sold_price,
+                "lot_size": lot_size
+            })
+            print(f"✅ Added property to Firebase: {address}")
+        except Exception as e:
+            print(f"❌ Error writing to Firebase: {e}")
+
+    print("🔥 Firebase update complete!")
+
+
+    # (Optional) Clear old properties before updating
+    docs = db.collection("properties").stream()
+    for doc in docs:
+        doc.reference.delete()
+    print("🗑️ Cleared old properties.")
+
     # Add all new properties
     for property in properties:
         address = property.get("address", "Unknown Address")

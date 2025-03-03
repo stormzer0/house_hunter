@@ -4,9 +4,25 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Load Firebase credentials (Replace with your Firebase key filename)
-cred = credentials.Certificate("firebase-key.json")
-firebase_admin.initialize_app(cred)
+import os
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Load Firebase credentials from GitHub Secret
+firebase_key_path = "firebase-key.json"
+with open(firebase_key_path, "w") as f:
+    f.write(os.getenv("FIREBASE_KEY"))
+
+cred = credentials.Certificate(firebase_key_path)
+
+try:
+    firebase_admin.initialize_app(cred)
+    print("✅ Firebase successfully initialized.")
+except ValueError:
+    print("⚠️ Firebase already initialized.")
+
 db = firestore.client()
+
 
 # RentCast API Key
 API_KEY = "36952abfe82240b2b29156c67e1426dd"  # Replace with your API Key
@@ -50,6 +66,49 @@ def update_firebase(properties):
         return
 
     print(f"📝 Found {len(properties)} properties. Updating Firebase...")
+
+    # (Optional) Clear old properties before updating
+    docs = db.collection("properties").stream()
+    for doc in docs:
+        doc.reference.delete()
+    print("🗑️ Cleared old properties.")
+
+    # Add all new properties
+    for property in properties:
+        address = property.get("formattedAddress", "Unknown Address")
+        if address == "Unknown Address":
+            print(f"⚠️ Skipping property due to missing address: {json.dumps(property, indent=2)}")
+            continue
+
+        document_id = address.replace(" ", "_").replace(",", "").replace(".", "")
+        rent_estimate = property.get("rentEstimate", 0)
+        last_sold_price = property.get("lastSalePrice", 0)  # Correct field from API
+        lot_size = property.get("lotSize", 0)  # Correct field for land size
+
+        # ✅ Log the full data before writing to Firebase
+        print(f"📦 Data to be stored in Firebase for {document_id}:")
+        print(json.dumps({
+            "address": address,
+            "rent_estimate": rent_estimate,
+            "last_sold_price": last_sold_price,
+            "lot_size": lot_size
+        }, indent=2))
+
+        doc_ref = db.collection("properties").document(document_id)
+        
+        try:
+            doc_ref.set({
+                "address": address,
+                "rent_estimate": rent_estimate,
+                "last_sold_price": last_sold_price,
+                "lot_size": lot_size
+            })
+            print(f"✅ Successfully added to Firebase: {address}")
+        except Exception as e:
+            print(f"❌ Error writing to Firebase: {e}")
+
+    print("🔥 Firebase update complete!")
+
 
     # (Optional) Clear old properties before updating
     docs = db.collection("properties").stream()

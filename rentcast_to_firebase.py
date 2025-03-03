@@ -3,15 +3,21 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# Load Firebase credentials (Replace with your Firebase key filename)
 import os
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Load Firebase credentials from GitHub Secret
+firebase_key_content = os.getenv("FIREBASE_KEY")
+
+if not firebase_key_content:
+    print("❌ ERROR: FIREBASE_KEY secret is missing! Add it to GitHub Secrets.")
+    exit(1)  # Stop the script if no key is found
+
+# Write the key to a file for Firebase SDK
 firebase_key_path = "firebase-key.json"
 with open(firebase_key_path, "w") as f:
-    f.write(os.getenv("FIREBASE_KEY"))
+    f.write(firebase_key_content)
 
 cred = credentials.Certificate(firebase_key_path)
 

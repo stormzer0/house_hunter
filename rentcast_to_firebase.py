@@ -18,17 +18,28 @@ TOWNS = ["Greenport, NY", "Southold, NY", "East Hampton, NY"]
 def fetch_property_data():
     properties = []
     for town in TOWNS:
-        url = f"https://api.rentcast.io/v1/properties?city_state={town.replace(' ', '%20')}"
-        headers = {"X-API-Key": API_KEY}
+        city, state = town.split(", ")  # Split "Greenport, NY" into "Greenport" and "NY"
+        url = f"https://api.rentcast.io/v1/properties?city={city}&state={state}"
+        headers = {"X-Api-Key": API_KEY, "Accept": "application/json"}
+        
         response = requests.get(url, headers=headers)
-
+        
         if response.status_code == 200:
             data = response.json()
-            properties.extend(data.get("properties", []))  # Extract property list
+            print(f"Response for {town}: {data}")  # Debug: Print full response
+
+            if isinstance(data, list):  
+                properties.extend(data)  # If API returns a list, append directly
+            elif isinstance(data, dict) and "properties" in data:
+                properties.extend(data["properties"])  # If it's a dictionary, extract "properties"
+            else:
+                print(f"Unexpected response format for {town}: {data}")
+
         else:
             print(f"Error fetching data for {town}: {response.json()}")
 
     return properties
+
 
 # Function to update Firebase
 def update_firebase(properties):

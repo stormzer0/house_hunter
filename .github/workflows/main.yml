@@ -27,3 +27,6 @@ jobs:
 
       - name: Run RentCast script
         run: python rentcast_to_firebase.py
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+

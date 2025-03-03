@@ -26,17 +26,17 @@ def fetch_property_data():
         
         if response.status_code == 200:
             data = response.json()
-            print(f"📡 API Response for {town}: {json.dumps(data, indent=2)}")
+            print(f"📡 API Response for {town}: {json.dumps(data, indent=2)}")  # Debug: Print API response
 
-            if isinstance(data, list):  
+            if isinstance(data, list) and len(data) > 0:  
                 properties.extend(data)  # If API returns a list, append directly
-            elif isinstance(data, dict) and "properties" in data:
+            elif isinstance(data, dict) and "properties" in data and len(data["properties"]) > 0:
                 properties.extend(data["properties"])  # If it's a dictionary, extract "properties"
             else:
-                print(f"⚠️ Unexpected response format for {town}: {data}")
+                print(f"⚠️ Unexpected or empty response format for {town}: {data}")
 
         else:
-            print(f"❌ Error fetching data for {town}: {response.json()}")
+            print(f"❌ API Error for {town}: {response.status_code}, Response: {response.json()}")
 
     print(f"🏡 Total properties fetched: {len(properties)}")
     return properties

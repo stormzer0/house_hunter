@@ -4,6 +4,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import os
 import time
+from datetime import datetime
 
 # Load Firebase credentials from GitHub Secret
 firebase_key_content = os.getenv("FIREBASE_KEY")
@@ -28,119 +29,117 @@ except ValueError:
 db = firestore.client()
 
 # RentCast API Key
-API_KEY = "36952abfe82240b2b29156c67e1426dd"  # Replace with your API Key
+API_KEY = "36952abfe82240b2b29156c67e1426dd"
 API_HEADERS = {"X-Api-Key": API_KEY, "Accept": "application/json"}
 
 # List of towns we want to track
 TOWNS = ["Greenport, NY", "Southold, NY", "East Hampton, NY"]
 
-# Function to fetch property data using multiple endpoints
+# Function to track API calls
+class ApiCallCounter:
+    def __init__(self):
+        self.calls = 0
+        
+    def increment(self):
+        self.calls += 1
+        if self.calls % 10 == 0:
+            print(f"⚠️ API Call Count: {self.calls}")
+        
+    def get_count(self):
+        return self.calls
+
+# Initialize counter
+counter = ApiCallCounter()
+
+# Function to fetch property data using a single call to RentCast property search endpoint
 def fetch_property_data():
     properties = []
     
     for town in TOWNS:
-        city, state = town.split(", ")  # Split "Greenport, NY" into "Greenport" and "NY"
+        city, state = town.split(", ")
         
-        # Step 1: Get basic property data first
-        properties_url = f"https://api.rentcast.io/v1/properties?city={city}&state={state}&limit=50"
+        # We're going to use the property details endpoint which includes valuations in a single call
+        # This is more efficient than making separate calls for rent and sales data
+        search_url = f"https://api.rentcast.io/v1/properties/search"
+        payload = {
+            "city": city,
+            "state": state,
+            "limit": 15,  # Limit to 15 properties per town to conserve API calls
+            "includeValuations": True  # This should include rent estimates
+        }
         
         print(f"🔍 Fetching properties for {town}...")
-        response = requests.get(properties_url, headers=API_HEADERS)
+        counter.increment()  # Count this API call
+        response = requests.post(search_url, headers=API_HEADERS, json=payload)
         
         if response.status_code != 200:
             print(f"❌ API Error for {town}: {response.status_code}")
             continue
             
-        # Process property data
         data = response.json()
-        town_properties = []
         
-        if isinstance(data, list) and len(data) > 0:
-            town_properties = data
-        elif isinstance(data, dict) and "properties" in data and len(data["properties"]) > 0:
-            town_properties = data["properties"]
+        # Save the raw response to a file for debugging
+        with open(f"{city.lower()}_search_response.json", "w") as f:
+            json.dump(data, f, indent=2)
+        
+        # Process the results
+        if "results" in data and len(data["results"]) > 0:
+            print(f"✅ Found {len(data['results'])} properties for {town}")
+            
+            # Log the structure of the first result to understand the data format
+            if len(data["results"]) > 0:
+                first_property = data["results"][0]
+                print(f"📊 Sample property structure:")
+                
+                # Check for key fields
+                print(f"  - Has address: {'address' in first_property}")
+                print(f"  - Has rent estimate: {'rentEstimate' in first_property}")
+                print(f"  - Has valuations: {'valuations' in first_property}")
+                if "valuations" in first_property:
+                    print(f"  - Valuations structure: {list(first_property['valuations'].keys())}")
+                print(f"  - Has lastSale: {'lastSale' in first_property}")
+                
+            # Process and enrich all properties
+            for prop in data["results"]:
+                # Get rent estimate from the response
+                rent_estimate = 0
+                if "rentEstimate" in prop:
+                    rent_estimate = prop["rentEstimate"]
+                elif "valuations" in prop and "rentEstimate" in prop["valuations"]:
+                    rent_estimate = prop["valuations"]["rentEstimate"]
+                
+                # Get sale price from the response
+                last_sold_price = 0
+                last_sale_date = ""
+                if "lastSale" in prop and prop["lastSale"]:
+                    if "price" in prop["lastSale"]:
+                        last_sold_price = prop["lastSale"]["price"]
+                    if "date" in prop["lastSale"]:
+                        last_sale_date = prop["lastSale"]["date"]
+                
+                # Create enhanced property with all the data we need
+                enhanced_prop = {
+                    "address": prop.get("address", ""),
+                    "city": city,
+                    "state": state,
+                    "bedrooms": prop.get("bedrooms", 0),
+                    "bathrooms": prop.get("bathrooms", 0),
+                    "lot_size": prop.get("lotSize", 0),
+                    "rent_estimate": rent_estimate,
+                    "last_sold_price": last_sold_price,
+                    "last_sale_date": last_sale_date,
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                
+                properties.append(enhanced_prop)
         else:
-            print(f"⚠️ Unexpected or empty response format for {town}")
-            continue
-            
-        print(f"✅ Found {len(town_properties)} properties for {town}")
-        
-        # Step 2: For each property, get additional details including rent estimates
-        for i, prop in enumerate(town_properties):
-            # Extract the address
-            address = None
-            for field in ["formattedAddress", "address", "formatted_address"]:
-                if field in prop and prop[field]:
-                    address = prop[field]
-                    break
-                    
-            if not address:
-                print(f"⚠️ Skipping property with missing address")
-                continue
-                
-            # Extract property ID if available
-            property_id = prop.get("id")
-            
-            # Get rent estimate using the property address
-            # According to the API docs, we need to use the /avm/rent endpoint for this
-            enhanced_prop = prop.copy()  # Create a copy to add additional info
-            
-            # Try to get rent estimate using the address
-            try:
-                rent_url = f"https://api.rentcast.io/v1/avm/rent?address={address}"
-                rent_response = requests.get(rent_url, headers=API_HEADERS)
-                
-                if rent_response.status_code == 200:
-                    rent_data = rent_response.json()
-                    rent_estimate = rent_data.get("rent")
-                    if rent_estimate:
-                        enhanced_prop["rentEstimate"] = rent_estimate
-                        print(f"💰 Found rent estimate for {address}: ${rent_estimate}")
-                else:
-                    print(f"⚠️ Failed to get rent estimate for {address}: {rent_response.status_code}")
-            except Exception as e:
-                print(f"❌ Error getting rent estimate: {e}")
-                
-            # Try to get sales history using the property ID or address
-            try:
-                if property_id:
-                    sales_url = f"https://api.rentcast.io/v1/properties/{property_id}/sales"
-                else:
-                    sales_url = f"https://api.rentcast.io/v1/sales?address={address}"
-                    
-                sales_response = requests.get(sales_url, headers=API_HEADERS)
-                
-                if sales_response.status_code == 200:
-                    sales_data = sales_response.json()
-                    
-                    # Process based on response format (array or object)
-                    sales_history = []
-                    if isinstance(sales_data, list):
-                        sales_history = sales_data
-                    elif isinstance(sales_data, dict) and "sales" in sales_data:
-                        sales_history = sales_data["sales"]
-                    
-                    if sales_history:
-                        # Get the most recent sale
-                        most_recent_sale = max(sales_history, key=lambda sale: sale.get("date", ""))
-                        enhanced_prop["lastSalePrice"] = most_recent_sale.get("amount")
-                        enhanced_prop["lastSaleDate"] = most_recent_sale.get("date")
-                        print(f"🏠 Found last sale price for {address}: ${enhanced_prop['lastSalePrice']}")
-            except Exception as e:
-                print(f"❌ Error getting sales history: {e}")
-                
-            # Add the enhanced property to our list
-            properties.append(enhanced_prop)
-            
-            # Respect API rate limits (50 requests per minute)
-            if i > 0 and i % 20 == 0:
-                print(f"⏱️ Pausing for API rate limit...")
-                time.sleep(3)  # Add a small delay every 20 properties
+            print(f"⚠️ No properties found for {town}")
     
-    print(f"🏡 Total properties with details fetched: {len(properties)}")
+    print(f"🏡 Total properties fetched: {len(properties)}")
+    print(f"📞 Total API calls made: {counter.get_count()}")
     return properties
 
-# Function to update Firebase with more careful field extraction
+# Function to update Firebase
 def update_firebase(properties):
     if not properties:
         print("❌ No properties found. Nothing to update.")
@@ -159,63 +158,39 @@ def update_firebase(properties):
     # Add all new properties
     added_count = 0
     for property in properties:
-        # Extract address
-        address = None
-        for addr_field in ["formattedAddress", "address", "formatted_address"]:
-            if addr_field in property and property[addr_field]:
-                address = property[addr_field]
-                break
-        
+        address = property.get("address")
         if not address:
+            print("⚠️ Skipping property with missing address")
             continue
 
         document_id = address.replace(" ", "_").replace(",", "").replace(".", "")
         
-        # Extract all relevant fields using the correct names from the API
-        rent_estimate = property.get("rentEstimate", 0)
-        last_sold_price = property.get("lastSalePrice", 0)
-        last_sale_date = property.get("lastSaleDate", "")
-        lot_size = property.get("lotSize", 0)
-        bedrooms = property.get("bedrooms", 0)
-        bathrooms = property.get("bathrooms", 0)
-        
-        # For debugging the first few properties
-        if added_count < 3:
-            print(f"\n🔍 PROPERTY DETAILS FOR: {address}")
-            print(f"  Rent Estimate: ${rent_estimate}")
-            print(f"  Last Sold Price: ${last_sold_price}")
-            print(f"  Last Sale Date: {last_sale_date}")
-            print(f"  Lot Size: {lot_size} sq ft")
-            print(f"  Bedrooms: {bedrooms}")
-            print(f"  Bathrooms: {bathrooms}")
-        
+        # Add the property to Firebase
         doc_ref = db.collection("properties").document(document_id)
         
         try:
-            property_data = {
-                "address": address,
-                "rent_estimate": rent_estimate,
-                "last_sold_price": last_sold_price,
-                "last_sale_date": last_sale_date,
-                "lot_size": lot_size,
-                "bedrooms": bedrooms,
-                "bathrooms": bathrooms
-            }
-            
-            doc_ref.set(property_data)
+            doc_ref.set(property)
             added_count += 1
             if added_count <= 3 or added_count % 10 == 0:
                 print(f"✅ Added: {address}")
+                
+                # For debugging, print out specific values
+                if added_count <= 3:
+                    print(f"  - Rent Estimate: ${property['rent_estimate']}")
+                    print(f"  - Last Sold Price: ${property['last_sold_price']}")
+                    print(f"  - Last Sale Date: {property['last_sale_date']}")
         except Exception as e:
             print(f"❌ Error writing to Firebase: {e}")
 
     print(f"🔥 Firebase update complete! Added {added_count} properties.")
 
-# Fetch data and update Firebase
+# Main execution
 print("🚀 Starting property data fetch...")
 properties = fetch_property_data()
 if properties:
     update_firebase(properties)
     print("✅ Data successfully updated in Firebase!")
+    print(f"📊 SUMMARY: Made {counter.get_count()} API calls to fetch {len(properties)} properties")
+    print(f"💡 With 1000 calls/month limit and running 2x weekly, you should aim for ~125 calls per run")
 else:
     print("❌ No properties found.")

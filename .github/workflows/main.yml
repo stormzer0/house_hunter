@@ -2,7 +2,7 @@ name: Fetch Property Data
 
 on:
   schedule:
-    - cron: "0 0 * * 0"  # Runs every Sunday at midnight UTC
+    - cron: "0 0 * * 0,3"  # Runs every Sunday and Wednesday at midnight UTC
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
@@ -29,4 +29,3 @@ jobs:
         run: python rentcast_to_firebase.py
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-

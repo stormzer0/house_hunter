@@ -18,7 +18,7 @@ const db = getFirestore(app);
 
 // Function to format currency values
 function formatCurrency(value) {
-  if (!value) return "N/A";
+  if (!value || value === 0) return "N/A";
   return new Intl.NumberFormat('en-US', { 
     style: 'currency', 
     currency: 'USD',
@@ -28,8 +28,14 @@ function formatCurrency(value) {
 
 // Function to format area values
 function formatArea(value) {
-  if (!value) return "N/A";
+  if (!value || value === 0) return "N/A";
   return new Intl.NumberFormat('en-US').format(value) + " sq ft";
+}
+
+// Format bedrooms and bathrooms
+function formatRooms(value) {
+  if (!value || value === 0) return "N/A";
+  return value;
 }
 
 // Function to fetch property data from Firestore
@@ -50,15 +56,22 @@ async function fetchProperties() {
 
         querySnapshot.forEach((doc) => {
             const data = doc.data();
+            
+            // Add sale date if available
+            let saleInfo = formatCurrency(data.last_sold_price);
+            if (data.last_sale_date) {
+                saleInfo += ` (${data.last_sale_date})`;
+            }
+            
             content += `
                 <div class="property">
                     <h3>${data.address || "Unknown Address"}</h3>
                     <div class="property-details">
-                        <p><strong>Last Sale Price:</strong> ${formatCurrency(data.last_sold_price)}</p>
+                        <p><strong>Last Sale Price:</strong> ${saleInfo}</p>
                         <p><strong>Rent Estimate:</strong> ${formatCurrency(data.rent_estimate)}/month</p>
                         <p><strong>Lot Size:</strong> ${formatArea(data.lot_size)}</p>
-                        <p><strong>Bedrooms:</strong> ${data.bedrooms || "N/A"}</p>
-                        <p><strong>Bathrooms:</strong> ${data.bathrooms || "N/A"}</p>
+                        <p><strong>Bedrooms:</strong> ${formatRooms(data.bedrooms)}</p>
+                        <p><strong>Bathrooms:</strong> ${formatRooms(data.bathrooms)}</p>
                     </div>
                 </div>
             `;

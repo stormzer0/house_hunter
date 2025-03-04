@@ -2,10 +2,7 @@ import requests
 import json
 import firebase_admin
 from firebase_admin import credentials, firestore
-
 import os
-import firebase_admin
-from firebase_admin import credentials, firestore
 
 # Load Firebase credentials from GitHub Secret
 firebase_key_content = os.getenv("FIREBASE_KEY")
@@ -29,7 +26,6 @@ except ValueError:
 
 db = firestore.client()
 
-
 # RentCast API Key
 API_KEY = "36952abfe82240b2b29156c67e1426dd"  # Replace with your API Key
 
@@ -44,28 +40,35 @@ def fetch_property_data():
         url = f"https://api.rentcast.io/v1/properties?city={city}&state={state}&limit=50"
         headers = {"X-Api-Key": API_KEY, "Accept": "application/json"}
         
+        print(f"🔍 Fetching properties for {town}...")
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
             data = response.json()
-            print(f"📡 API Response for {town}: {json.dumps(data, indent=2)}")  # Debug: Print API response
-
-            if isinstance(data, list) and len(data) > 0:  
+            print(f"✅ Received response for {town}")
+            
+            # Debug the first property to understand structure
+            if isinstance(data, list) and len(data) > 0:
+                print(f"📊 Sample property structure for {town}:")
+                print(json.dumps(data[0], indent=2))
                 properties.extend(data)  # If API returns a list, append directly
             elif isinstance(data, dict) and "properties" in data and len(data["properties"]) > 0:
+                print(f"📊 Sample property structure for {town}:")
+                print(json.dumps(data["properties"][0], indent=2))
                 properties.extend(data["properties"])  # If it's a dictionary, extract "properties"
             else:
-                print(f"⚠️ Unexpected or empty response format for {town}: {data}")
-
+                print(f"⚠️ Unexpected or empty response format for {town}")
         else:
-            print(f"❌ API Error for {town}: {response.status_code}, Response: {response.json()}")
+            print(f"❌ API Error for {town}: {response.status_code}")
+            try:
+                print(f"Error details: {response.json()}")
+            except:
+                print(f"Error details not available as JSON")
 
     print(f"🏡 Total properties fetched: {len(properties)}")
     return properties
 
-
-
-# Function to update Firebase
+# Function to update Firebase - FIXED VERSION
 def update_firebase(properties):
     if not properties:
         print("❌ No properties found. Nothing to update.")
@@ -73,108 +76,66 @@ def update_firebase(properties):
 
     print(f"📝 Found {len(properties)} properties. Updating Firebase...")
 
-    # (Optional) Clear old properties before updating
+    # Clear old properties before updating
     docs = db.collection("properties").stream()
+    deleted_count = 0
     for doc in docs:
         doc.reference.delete()
-    print("🗑️ Cleared old properties.")
+        deleted_count += 1
+    print(f"🗑️ Cleared {deleted_count} old properties.")
 
     # Add all new properties
+    added_count = 0
     for property in properties:
-        address = property.get("formattedAddress", "Unknown Address")
+        # Try different possible field names for address
+        address = (
+            property.get("formattedAddress") or 
+            property.get("address") or 
+            property.get("formatted_address") or 
+            "Unknown Address"
+        )
+        
         if address == "Unknown Address":
-            print(f"⚠️ Skipping property due to missing address: {json.dumps(property, indent=2)}")
+            print(f"⚠️ Skipping property due to missing address")
             continue
 
         document_id = address.replace(" ", "_").replace(",", "").replace(".", "")
-        rent_estimate = property.get("rentEstimate", 0)
-        last_sold_price = property.get("lastSalePrice", 0)  # Correct field from API
-        lot_size = property.get("lotSize", 0)  # Correct field for land size
-
-        # ✅ Log the full data before writing to Firebase
-        print(f"📦 Data to be stored in Firebase for {document_id}:")
-        print(json.dumps({
-            "address": address,
-            "rent_estimate": rent_estimate,
-            "last_sold_price": last_sold_price,
-            "lot_size": lot_size
-        }, indent=2))
-
+        
+        # Try different field names for each property
+        rent_estimate = property.get("rentEstimate", property.get("rent_estimate", 0))
+        last_sold_price = property.get("lastSalePrice", property.get("last_sale_price", 0))
+        lot_size = property.get("lotSize", property.get("lot_size", 0))
+        
+        # Additional fields you might want to store
+        bedrooms = property.get("bedrooms", 0)
+        bathrooms = property.get("bathrooms", 0)
+        
         doc_ref = db.collection("properties").document(document_id)
         
         try:
-            doc_ref.set({
+            property_data = {
                 "address": address,
                 "rent_estimate": rent_estimate,
                 "last_sold_price": last_sold_price,
-                "lot_size": lot_size
-            })
-            print(f"✅ Successfully added to Firebase: {address}")
+                "lot_size": lot_size,
+                "bedrooms": bedrooms,
+                "bathrooms": bathrooms
+            }
+            
+            doc_ref.set(property_data)
+            added_count += 1
+            if added_count <= 3 or added_count % 10 == 0:  # Show some samples and progress
+                print(f"✅ Added: {address}")
         except Exception as e:
             print(f"❌ Error writing to Firebase: {e}")
 
-    print("🔥 Firebase update complete!")
-
-
-    # (Optional) Clear old properties before updating
-    docs = db.collection("properties").stream()
-    for doc in docs:
-        doc.reference.delete()
-    print("🗑️ Cleared old properties.")
-
-    for property in properties:
-        address = property.get("formattedAddress", "Unknown Address")
-        if address == "Unknown Address":
-            print(f"⚠️ Skipping property due to missing address: {json.dumps(property, indent=2)}")
-            continue
-
-        document_id = address.replace(" ", "_").replace(",", "").replace(".", "")
-        rent_estimate = property.get("rentEstimate", 0)
-        last_sold_price = property.get("lastSalePrice", 0)  # Correct field from API
-        lot_size = property.get("lotSize", 0)  # Correct field for land size
-
-        doc_ref = db.collection("properties").document(document_id)
-        
-        try:
-            doc_ref.set({
-                "address": address,
-                "rent_estimate": rent_estimate,
-                "last_sold_price": last_sold_price,
-                "lot_size": lot_size
-            })
-            print(f"✅ Added property to Firebase: {address}")
-        except Exception as e:
-            print(f"❌ Error writing to Firebase: {e}")
-
-    print("🔥 Firebase update complete!")
-
-
-    # (Optional) Clear old properties before updating
-    docs = db.collection("properties").stream()
-    for doc in docs:
-        doc.reference.delete()
-    print("🗑️ Cleared old properties.")
-
-    # Add all new properties
-    for property in properties:
-        address = property.get("address", "Unknown Address")
-        if address == "Unknown Address":
-            print("⚠️ Skipping property with missing address")
-            continue
-
-        print(f"📝 Writing to Firebase: {property}")  # Debugging log
-        doc_ref = db.collection("properties").document(address.replace(" ", "_"))
-        doc_ref.set(property)
-        print(f"✅ Added: {address}")
-
-    print("🔥 Firebase update complete!")
-
+    print(f"🔥 Firebase update complete! Added {added_count} properties.")
 
 # Fetch data and update Firebase
+print("🚀 Starting property data fetch...")
 properties = fetch_property_data()
 if properties:
     update_firebase(properties)
     print("✅ Data successfully updated in Firebase!")
 else:
     print("❌ No properties found.")
-

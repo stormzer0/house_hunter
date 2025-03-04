@@ -38,6 +38,14 @@ function formatRooms(value) {
   return value;
 }
 
+// Calculate cap rate
+function calculateCapRate(rentEstimate, propertyValue) {
+  if (!rentEstimate || !propertyValue || rentEstimate === 0 || propertyValue === 0) return "N/A";
+  const annualRent = rentEstimate * 12;
+  const capRate = (annualRent / propertyValue) * 100;
+  return capRate.toFixed(2) + "%";
+}
+
 // Function to fetch property data from Firestore
 async function fetchProperties() {
     try {
@@ -50,32 +58,44 @@ async function fetchProperties() {
             return;
         }
 
+        // Convert to array for sorting
+        const propertiesArray = [];
+        querySnapshot.forEach((doc) => {
+            propertiesArray.push(doc.data());
+        });
+        
+        // Sort by property value (highest to lowest)
+        propertiesArray.sort((a, b) => b.property_value - a.property_value);
+
         content += `
-        <div class="property-count">Found ${querySnapshot.size} properties</div>
+        <div class="property-count">Found ${propertiesArray.length} properties - Filtered to $100K-$1.2M value range</div>
         `;
 
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            
+        for (const data of propertiesArray) {
             // Add sale date if available
             let saleInfo = formatCurrency(data.last_sold_price);
             if (data.last_sale_date) {
                 saleInfo += ` (${data.last_sale_date})`;
             }
             
+            // Calculate cap rate
+            const capRate = calculateCapRate(data.rent_estimate, data.property_value);
+            
             content += `
                 <div class="property">
                     <h3>${data.address || "Unknown Address"}</h3>
                     <div class="property-details">
+                        <p><strong>Property Value:</strong> ${formatCurrency(data.property_value)}</p>
                         <p><strong>Last Sale Price:</strong> ${saleInfo}</p>
-                        <p><strong>Rent Estimate:</strong> ${formatCurrency(data.rent_estimate)}/month</p>
+                        <p><strong>Monthly Rent:</strong> ${formatCurrency(data.rent_estimate)}</p>
+                        <p><strong>Cap Rate:</strong> ${capRate}</p>
                         <p><strong>Lot Size:</strong> ${formatArea(data.lot_size)}</p>
                         <p><strong>Bedrooms:</strong> ${formatRooms(data.bedrooms)}</p>
                         <p><strong>Bathrooms:</strong> ${formatRooms(data.bathrooms)}</p>
                     </div>
                 </div>
             `;
-        });
+        }
 
         document.getElementById("property-data").innerHTML = content;
     } catch (error) {
